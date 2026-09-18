@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "check_tasmota_sensor"
+version = "0.1.0"
+description = "Nagios/Icinga plugin for Tasmota devices (HTTP command API)"
+readme = "README.md"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Thomas Wagner", email = "wagner-thomas@gmx.at" },
+]
+requires-python = ">=3.8"
+classifiers = [
+    "Environment :: Console",
+    "Intended Audience :: System Administrators",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: System :: Monitoring",
+]
+dependencies = [
+    "requests>=2.20",
+]
+
+[project.scripts]
+check_tasmota_sensor = "check_tasmota_sensor:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
