@@ -5,7 +5,7 @@ devices via Tasmota's HTTP command API (`GET http://<host>/cm?cmnd=<command>`).
 
 ## Features
 
-- **Four kinds of checks** (`--check`)
+- **Five kinds of checks** (`--check`)
   - `sensor`: compare a numeric value from `Status 8` (`StatusSNS`) against
     `-w`/`-c` thresholds. Entities are addressed as `<Module>.<Field>`, e.g.
     `BME280.Temperature` or `ENERGY.Power` -- Tasmota nests sensor readings
@@ -21,6 +21,9 @@ devices via Tasmota's HTTP command API (`GET http://<host>/cm?cmnd=<command>`).
     multi-relay device, or plain `POWER` on a single-relay one.
   - `text`: match a value from `Status 8` (same `<Module>.<Field>`
     addressing as `sensor`) against a Python regular expression (`--regex`).
+  - `compare`: check that `--entity` stays above (or below) the
+    `--compare-entity`, both `<Module>.<Field>`, by a margin, see
+    [below](#comparing-two-sensor-fields).
 - **`--list`**: instead of `--check`, print the available sensor fields (as
   `<Module>.<Field>`) and `POWER`-style relay states, with their current
   value, so you know what to pass to `--entity`/`--text-entity`/
@@ -79,9 +82,30 @@ check_tasmota_sensor -H tasmota.local --check binary --binary-expr 'POWER1 and n
 # Regex match against a sensor field
 check_tasmota_sensor -H tasmota.local --check text --text-entity 'DS18B20-1.Id' --regex '^01212F'
 
+# The wall (DS18B20) has to stay at least 3 degrees above the dew point (SHT3X)
+check_tasmota_sensor -H tasmota.local --check compare --entity DS18B20.Temperature \
+    --compare-entity SHT3X.DewPoint --must-be above -w 3 -c 1
+
 # List all entities you could target with the above
 check_tasmota_sensor -H tasmota.local --list
 ```
+
+### Comparing two sensor fields
+
+`--check compare` checks that one value stays on one side of another, as
+climate control has to keep it: `--must-be above` requires `--entity` to be
+larger than `--compare-entity`, `--must-be below` smaller. `-w` and `-c` are
+the smallest acceptable margins between the two, in their unit: a margin at
+or below `-w` is WARNING, at or below `-c` CRITICAL. So `-w` must not be
+smaller than `-c`, and a value on the wrong side is CRITICAL whenever `-c` is
+0 or more.
+
+- **Condensation**: a wall has to stay warmer than the dew point of the air:
+  `--entity DS18B20.Temperature --compare-entity SHT3X.DewPoint --must-be above -w 3 -c 1`
+- **Air conditioning**: the room has to stay cooler than outside:
+  `--entity SHT3X.Temperature --compare-entity BME280.Temperature --must-be below -w 2 -c 0`
+
+The performance data holds the margin and both values. Both fields come from the same `Status 8` reading.
 
 ## License
 

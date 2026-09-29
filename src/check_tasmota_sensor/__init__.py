@@ -20,7 +20,7 @@ If a web admin password is set on the device, pass -u/-P; Tasmota expects
 these as "user"/"password" query parameters on every /cm request (not as
 HTTP Basic auth), so they are sent that way here too.
 
-Four kinds of checks (--check):
+Five kinds of checks (--check):
   sensor  Compare a numeric value from "Status 8" (StatusSNS) against
           -w/-c thresholds. Entities are addressed as "<Module>.<Field>",
           e.g. "BME280.Temperature" or "ENERGY.Power" -- Tasmota nests
@@ -38,6 +38,12 @@ Four kinds of checks (--check):
   text    Match a value from "Status 8" (StatusSNS, same "<Module>.<Field>"
           addressing as "sensor") against a Python regular expression
           (--regex), e.g. to check a string-valued field.
+  compare Check that --entity stays above (or below, --must-be) the
+          --compare-entity, both "<Module>.<Field>", by a margin: -w and
+          -c are the smallest acceptable margins, e.g. a wall temperature
+          at least 3 degrees above the dew point (--must-be above -w 3
+          -c 1), or a room at least 2 degrees below the outside
+          temperature for an air conditioning (--must-be below -w 2 -c 0).
 
 Pass --list instead of --check to print the available sensor fields (as
 "<Module>.<Field>") and POWER-style relay states, with their current
@@ -215,6 +221,28 @@ def evaluate_numeric(value, warning, critical, label, uom=""):
     return state, message
 
 
+def evaluate_margin(value, other, must_be, warning, critical, label, other_label, uom=""):
+    """--check compare: value has to be above (or below) other by more than
+    the margins -w and -c; a margin at or below -c is CRITICAL."""
+    margin = value - other if must_be == "above" else other - value
+    if margin <= critical:
+        state = STATE_CRITICAL
+    elif margin <= warning:
+        state = STATE_WARNING
+    else:
+        state = STATE_OK
+    if margin > 0:
+        relation = f"{margin:.6g}{uom} {must_be}"
+    elif margin == 0:
+        relation = f"equal to, not {must_be},"
+    else:
+        relation = f"{-margin:.6g}{uom} {'below' if must_be == 'above' else 'above'}, not {must_be},"
+    message = (f"{label} is {relation} {other_label} ({value:.6g}{uom} vs {other:.6g}{uom}) | "
+               f"'margin'={margin:.6g}{uom};{warning:.6g};{critical:.6g} "
+               f"'{label}'={value:.6g}{uom} '{other_label}'={other:.6g}{uom}")
+    return state, message
+
+
 # ---------------------------------------------------------------------------
 # time-offset check
 # ---------------------------------------------------------------------------
@@ -340,6 +368,8 @@ def parse_args():
             "  %(prog)s -H tasmota.local --check time -w 5 -c 30\n"
             "  %(prog)s -H tasmota.local --check binary --binary-expr 'POWER1 and not POWER2'\n"
             "  %(prog)s -H tasmota.local --check text --text-entity BME280.Temperature --regex '^2'\n"
+            "  %(prog)s -H tasmota.local --check compare --entity DS18B20.Temperature "
+            "--compare-entity SHT3X.DewPoint --must-be above -w 3 -c 1\n"
             "  %(prog)s -H tasmota.local --list\n"
         ),
     )
@@ -357,7 +387,8 @@ def parse_args():
         help="list available sensor fields and POWER-style relay states, with their "
              "current value, and exit, instead of running a check",
     )
-    parser.add_argument("--check", choices=("sensor", "time", "binary", "text"), help="type of check to perform")
+    parser.add_argument("--check", choices=("sensor", "time", "binary", "text", "compare"),
+                        help="type of check to perform")
 
     sensor_group = parser.add_argument_group("--check sensor")
     sensor_group.add_argument("--entity", help='sensor field as "<Module>.<Field>", e.g. "BME280.Temperature"')
@@ -367,6 +398,15 @@ def parse_args():
         "--uom", default="",
         help="unit of measurement for performance data (default: retrieved from the "
              "device for fields literally named Temperature/Pressure, empty otherwise)",
+    )
+
+    compare_group = parser.add_argument_group("--check compare (also uses --entity, -w, -c, --uom)")
+    compare_group.add_argument("--compare-entity",
+                               help='sensor field as "<Module>.<Field>" that --entity is compared with')
+    compare_group.add_argument(
+        "--must-be", choices=("above", "below"),
+        help="whether --entity has to stay above or below --compare-entity; -w and -c are the "
+             "smallest acceptable margins, so -w must not be smaller than -c",
     )
 
     time_group = parser.add_argument_group("--check time")
@@ -399,6 +439,13 @@ def parse_args():
     if args.check == "sensor":
         if not args.entity or args.warning is None or args.critical is None:
             parser.error("--check sensor requires --entity, -w and -c")
+    elif args.check == "compare":
+        if not args.entity or not args.compare_entity or not args.must_be or args.warning is None \
+                or args.critical is None:
+            parser.error("--check compare requires --entity, --compare-entity, --must-be, -w and -c")
+        if args.warning < args.critical:
+            parser.error("for --check compare, -w and -c are the smallest acceptable margins, "
+                         "so -w must not be smaller than -c")
     elif args.check == "time":
         if args.warning is None or args.critical is None:
             parser.error("--check time requires -w and -c")
@@ -437,6 +484,22 @@ def main():
             die(STATE_UNKNOWN, f"Value of {args.entity} is not numeric: {value!r}")
         uom = args.uom or auto_uom or ""
         state, message = evaluate_numeric(value, args.warning, args.critical, args.entity, uom)
+        die(state, message)
+
+    elif args.check == "compare":
+        # both fields come from the same Status 8 reading
+        status_sns = fetch_status_sns(args)
+        numbers = {}
+        units = {}
+        for name in (args.entity, args.compare_entity):
+            value, units[name] = get_sensor_field(status_sns, name)
+            try:
+                numbers[name] = float(value)
+            except (TypeError, ValueError):
+                die(STATE_UNKNOWN, f"Value of {name} is not numeric: {value!r}")
+        state, message = evaluate_margin(numbers[args.entity], numbers[args.compare_entity], args.must_be,
+                                         args.warning, args.critical, args.entity, args.compare_entity,
+                                         args.uom or units[args.entity] or units[args.compare_entity] or "")
         die(state, message)
 
     elif args.check == "time":
