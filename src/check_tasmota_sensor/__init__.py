@@ -357,8 +357,17 @@ def eval_bool_expr(tree, values):
 # argument parsing
 # ---------------------------------------------------------------------------
 
+class ArgumentParser(argparse.ArgumentParser):
+    """argparse exits 2 on a usage error, which Nagios reads as CRITICAL; exit UNKNOWN instead."""
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        self.exit(STATE_UNKNOWN, f"{self.prog}: error: {message}\n")
+
+
 def parse_args():
-    parser = argparse.ArgumentParser(
+    parser = ArgumentParser(
+        prog="check_tasmota_sensor",
         description="Check Tasmota devices via the HTTP command API (/cm?cmnd=...).",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(

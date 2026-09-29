@@ -108,8 +108,17 @@ class TestCompare(unittest.TestCase):
 
     def test_usage(self):
         result = self.run_plugin(*self.compare("DS18B20.Temperature", "SHT3X.DewPoint", "above", 1, 3))
-        self.assertNotEqual(0, result.returncode)
+        self.assertEqual(plugin.STATE_UNKNOWN, result.returncode, result)
         self.assertIn("-w must not be smaller than -c", result.stderr)
+
+    def test_usage_errors_are_unknown(self):
+        # argparse would exit 2, which Nagios reads as CRITICAL
+        for argv in (["-Z"], [], ["--check", "sensor"], ["--check", "nope"], ["-p", "abc", "--list"],
+                     ["--check", "sensor", "--entity", "x", "-w", "abc", "-c", "1"],
+                     ["--check", "text", "--text-entity", "x", "--regex", "("]):
+            result = self.run_plugin(*argv)
+            self.assertEqual(plugin.STATE_UNKNOWN, result.returncode, (argv, result))
+            self.assertIn("check_tasmota_sensor: error: ", result.stderr)
 
 
 if __name__ == "__main__":
