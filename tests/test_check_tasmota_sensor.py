@@ -6,6 +6,7 @@ import sys
 import threading
 import unittest
 import urllib.parse
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import check_tasmota_sensor as plugin
@@ -28,7 +29,9 @@ class FakeTasmota(BaseHTTPRequestHandler):
     def do_GET(self):
         query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
         command = query.get("cmnd", [""])[0]
-        payload = {"StatusSNS": STATUS_SNS} if command == "Status 8" else {"Command": "Unknown"}
+        # Tasmota reports its local time without a UTC offset
+        status = dict(STATUS_SNS, Time=datetime.now().strftime("%Y-%m-%dT%H:%M:%S"))
+        payload = {"StatusSNS": status} if command == "Status 8" else {"Command": "Unknown"}
         body = json.dumps(payload).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -91,6 +94,11 @@ class TestCompare(unittest.TestCase):
                     *self.compare("SHT3X.Temperature", "ANALOG.Temperature", "below", 2, 0))
         self.expect(plugin.STATE_CRITICAL, r"^CRITICAL: ANALOG.Temperature is 6C above, not below",
                     *self.compare("ANALOG.Temperature", "SHT3X.Temperature", "below", 2, 0))
+
+    def test_time(self):
+        # the offset is rounded to tenths of a second, the thresholds have no needless decimals
+        self.expect(plugin.STATE_OK, r"^OK: time offset is [0-9]\.?[0-9]?s \| 'time offset'=[0-9]\.?[0-9]?s;10;20;;$",
+                    "--check", "time", "-w", "10", "-c", "20")
 
     def test_uom_override(self):
         # Tasmota's TempUnit is "C"; --uom replaces it in the text and the perfdata

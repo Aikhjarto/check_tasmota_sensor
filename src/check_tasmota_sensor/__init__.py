@@ -197,6 +197,12 @@ def print_entity_list(sensors, relays, host):
 # threshold evaluation (direction-agnostic: -c may be smaller than -w)
 # ---------------------------------------------------------------------------
 
+def fmt(value):
+    """A number with at most 6 decimals, without trailing zeros and never in exponent notation."""
+    text = f"{round(float(value), 6):f}".rstrip("0").rstrip(".")
+    return "0" if text in ("", "-0") else text
+
+
 def evaluate_numeric(value, warning, critical, label, uom=""):
     if warning is not None and critical is not None and warning > critical:
         # lower values are worse (e.g. battery / signal level style checks)
@@ -215,9 +221,9 @@ def evaluate_numeric(value, warning, critical, label, uom=""):
         else:
             state = STATE_OK
 
-    perf_warn = "" if warning is None else warning
-    perf_crit = "" if critical is None else critical
-    message = f"{label} is {value}{uom} | '{label}'={value}{uom};{perf_warn};{perf_crit};;"
+    perf_warn = "" if warning is None else fmt(warning)
+    perf_crit = "" if critical is None else fmt(critical)
+    message = f"{label} is {fmt(value)}{uom} | '{label}'={fmt(value)}{uom};{perf_warn};{perf_crit};;"
     return state, message
 
 
@@ -232,14 +238,14 @@ def evaluate_margin(value, other, must_be, warning, critical, label, other_label
     else:
         state = STATE_OK
     if margin > 0:
-        relation = f"{margin:.6g}{uom} {must_be}"
+        relation = f"{fmt(margin)}{uom} {must_be}"
     elif margin == 0:
         relation = f"equal to, not {must_be},"
     else:
-        relation = f"{-margin:.6g}{uom} {'below' if must_be == 'above' else 'above'}, not {must_be},"
-    message = (f"{label} is {relation} {other_label} ({value:.6g}{uom} vs {other:.6g}{uom}) | "
-               f"'margin'={margin:.6g}{uom};{warning:.6g};{critical:.6g} "
-               f"'{label}'={value:.6g}{uom} '{other_label}'={other:.6g}{uom}")
+        relation = f"{fmt(-margin)}{uom} {'below' if must_be == 'above' else 'above'}, not {must_be},"
+    message = (f"{label} is {relation} {other_label} ({fmt(value)}{uom} vs {fmt(other)}{uom}) | "
+               f"'margin'={fmt(margin)}{uom};{fmt(warning)};{fmt(critical)} "
+               f"'{label}'={fmt(value)}{uom} '{other_label}'={fmt(other)}{uom}")
     return state, message
 
 
@@ -517,7 +523,8 @@ def main():
             die(STATE_UNKNOWN, "Device did not report a 'Time' field")
         device_epoch = parse_device_time(status_sns["Time"])
         reference_epoch = get_reference_time(args.time_server, args.timeout)
-        offset = abs(device_epoch - reference_epoch)
+        # the device reports whole seconds at best: tenths are plenty
+        offset = round(abs(device_epoch - reference_epoch), 1)
         state, message = evaluate_numeric(offset, args.warning, args.critical, "time offset", "s")
         die(state, message)
 
