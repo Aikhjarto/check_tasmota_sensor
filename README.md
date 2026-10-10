@@ -107,6 +107,16 @@ smaller than `-c`, and a value on the wrong side is CRITICAL whenever `-c` is
 
 The performance data holds the margin and both values. Both fields come from the same `Status 8` reading.
 
+## Bash completion
+
+`completions/check_tasmota_sensor` completes the options and their values,
+also when the plugin is called by its full path. The packages install it;
+otherwise copy it to bash-completion's directory:
+
+```sh
+install -D -m 0644 completions/check_tasmota_sensor /usr/share/bash-completion/completions/check_tasmota_sensor
+```
+
 ## License
 
 GPL-3.0-or-later. See [LICENSE](LICENSE).

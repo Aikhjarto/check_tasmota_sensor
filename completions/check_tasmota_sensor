@@ -1,0 +1,45 @@
+# bash completion for check_tasmota_sensor                   -*- shell-script -*-
+
+_check_tasmota_sensor()
+{
+    local cur=${COMP_WORDS[COMP_CWORD]} prev=${COMP_WORDS[COMP_CWORD-1]}
+    # --option=value: bash splits at the =
+    if [[ $cur == = ]]; then
+        cur=
+    elif [[ $prev == = && $COMP_CWORD -ge 2 ]]; then
+        prev=${COMP_WORDS[COMP_CWORD-2]}
+    fi
+    COMPREPLY=()
+
+    case $prev in
+        -H | --host | --time-server)
+            mapfile -t COMPREPLY < <(compgen -A hostname -- "$cur")
+            return
+            ;;
+        --check)
+            mapfile -t COMPREPLY < <(compgen -W 'sensor time binary text compare' -- "$cur")
+            return
+            ;;
+        --must-be)
+            mapfile -t COMPREPLY < <(compgen -W 'above below' -- "$cur")
+            return
+            ;;
+        --true-state | --false-state | --match-state | --no-match-state)
+            mapfile -t COMPREPLY < <(compgen -W 'ok warning critical' -- "$cur")
+            return
+            ;;
+        -p | --port | -t | --timeout | -u | --username | -P | --password | --entity | \
+            -w | --warning | -c | --critical | --uom | --compare-entity | --binary-expr | \
+            --text-entity | --regex)
+            return
+            ;;
+    esac
+
+    # no positional arguments: offer the options
+    mapfile -t COMPREPLY < <(compgen -W '-h --help -H --host -p --port -t --timeout
+        -u --username -P --password --list --check --entity -w --warning
+        -c --critical --uom --compare-entity --must-be --time-server --binary-expr
+        --true-state --false-state --text-entity --regex -i --ignore-case
+        --match-state --no-match-state' -- "$cur")
+}
+complete -F _check_tasmota_sensor check_tasmota_sensor
